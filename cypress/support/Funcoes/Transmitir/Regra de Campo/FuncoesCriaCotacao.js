@@ -1,48 +1,58 @@
+const qtdCargaComum = Number(Cypress.env('qtdCargaComum')) || 100;
+const qtdTurismo = Number(Cypress.env('qtdTurismo')) || 0;
+const qtdSemirreboque = Number(Cypress.env('qtdSemirreboque')) || 0;
+const qtdCargaInflamavel = Number(Cypress.env('qtdCargaInflamavel')) || 0;
+let apoliceStatus = Cypress.env('apoliceStatus') || 'Transmitida';
+let apoliceTipo = Cypress.env('tipo') || 'PF'; 
+let formaPagamento = Cypress.env('formaPagamento') || "Boleto a prazo";
+let parcelas = Number(Cypress.env('parcelas')) || 1;
+let renovacao = Cypress.env('renovacao') || null;
+let inclusao = Cypress.env('inclusao') === 'true';
+let exclusao = Cypress.env('exclusao') === 'true'; 
+let cancelamento = Cypress.env('cancelamento') === 'true'; 
+const status = Cypress.env('statusDocumento') || 'Desconhecido';
 let cont = 0;
-Cypress.Commands.add('Transmitir', (tipo,renovacao) => {
-  cy.log('Criando Orcamento')
-  cy.buscaOferta(tipo,renovacao);
+Cypress.Commands.add('Transmitir', () => {
+  cy.buscaOferta();
   cy.AcessaImportacao();
-  cy.FazImportacao(tipo);
-  cy.get('#span-numero-orcamento', { timeout: 480000 })
-    .invoke('text')
-    .then(($numeroOrcamento) => {
-      Cypress.env('numeroOrcamentoGerado', $numeroOrcamento.trim());
-      console.log('[Info] Numero orcamento coletado');
-      if(tipo=='PF'){
-        cy.dadosPropostaPF();
-      }
-      cy.InsereEndereco();
-      cy.InsereEmail()
-      cy.FormaPagamento();
-      cy.get('#btn-salvar').click();
-      cy.get('#transmitir').click();
-      cy.get('#checkbox-transmitir-input').click();
-      cy.get('#btn-transmitir-proposta').click({ force: true });
-      
-      cy.get('#input-numero-orcamento').type($numeroOrcamento.trim(), { force: true }, { timeout: 48000 });
-      cy.get('#btn-pesquisar').click({ force: true });
-      cy.log($numeroOrcamento);
-      cy.Emitir().then(() => {
-        return $numeroOrcamento.trim();
-      });
-    });
+  cy.FazImportacao();
+  if(apoliceTipo=='PF'){
+    cy.dadosPropostaPF();
+  }
+  cy.InsereEndereco();
+  cy.InsereEmail()
+  cy.FormaPagamento();
+  cy.trasmiteProposta();
+  cy.extrairNumeroDocDaURL();
 });
 
-Cypress.Commands.add('buscaOferta', (tipo,renovacao) => {
+Cypress.Commands.add('extrairNumeroDocDaURL', () => {
+  cy.url().then((url) => {
+    const regex = /\/proposta\/(\d+)\//;
+    const match = url.match(regex);
+    
+    if (match && match[1]) {
+      const numeroDoc = match[1]; 
+      Cypress.env('numeroDoc', numeroDoc); 
+      cy.log('Número do Documento extraído da URL:'+ numeroDoc);
+    } else {
+      cy.log('Número do Documento não encontrado na URL.');
+    }
+  });
+});
+
+Cypress.Commands.add('buscaOferta', () => {
   cy.intercept('GET', 'https://apphubtst.portoseguro.brasil/api/frota/cartaazul/v1/pessoas/*').as('cpfRequest'); 
-  cy.log(renovacao)
   if (renovacao !== null && renovacao.numeroApolice) {
     cy.AdicionaRenovacao(renovacao);
 }
-
-  if (tipo == 'PF') {
+  if (apoliceTipo == 'PF') {
     cy.log('Pessoa Fisica')
     cy.get('#input-cpfCnpj').type(gerarCPF());
     cy.realPress('Tab');
     cy.wait('@cpfRequest', { timeout: 10000 });
     
-  } else if (tipo == 'PJ') {
+  } else if (apoliceTipo == 'PJ') {
     cy.log('Pessoa Juridica')
     cy.get('#input-cpfCnpj').type(gerarCNPJ())
     cy.realPress('Tab');
@@ -51,12 +61,28 @@ Cypress.Commands.add('buscaOferta', (tipo,renovacao) => {
       cy.wrap($el).click();
     });
   }
-
   cy.get('#input-razao-social').type(gerarNomeCompleto(), { timeout: 480000 });
-  cy.get('#qtd-carga-comum').type('1', { force: true });
+   if (qtdCargaComum > 0) {
+        cy.get('#qtd-carga-comum').type(qtdCargaComum, { force: true });
+    }
+    if (qtdTurismo > 0) {
+        cy.get('#qtd-turismo').type(qtdTurismo, { force: true });
+    }
+    if (qtdSemirreboque > 0) {
+        cy.get('#qtd-semirreboque').type(qtdSemirreboque, { force: true });
+    }
+    if (qtdCargaInflamavel > 0) {
+        cy.get('#qtd-inflamavel').type(qtdCargaInflamavel, { force: true });
+    }
+
   cy.get('#btn-buscar-oferta').click();
 });
-
+Cypress.Commands.add('trasmiteProposta', () => {
+  cy.get('#btn-salvar').click({ force: true });
+  cy.get('#transmitir').click({ force: true });
+  cy.get('#checkbox-transmitir-input').click({ force: true });
+  cy.get('#btn-transmitir-proposta').click({ force: true });
+});
 
 Cypress.Commands.add('AcessaImportacao', () => {
   cy.SelecionaPrimeiraOferta()
@@ -64,30 +90,54 @@ Cypress.Commands.add('AcessaImportacao', () => {
 });
 
 Cypress.Commands.add('FazImportacao', () => {
-  cy.get('#input-placa-0').clear().type(gerarPlaca(), { timeout: 480000 });
-  cy.realPress('Tab');
-  cy.get('#input-chassi-0', { timeout: 480000 }).clear().type(gerarChassi());
-  cy.realPress('Tab');
-  cy.get('#input-fabricacao-0', { timeout: 480000 }).invoke('val').then((fabricacao) => {
-    if (fabricacao) {
-      cy.get('#input-placa-0').clear().type(gerarPlaca(), { timeout: 480000 });
-      cy.get('#input-chassi-0', { timeout: 480000 }).clear().type(gerarChassi());
-      cy.realPress('Tab');
-    }
+  const totalVeiculos = qtdCargaComum + qtdTurismo + qtdSemirreboque + qtdCargaInflamavel;
 
-    cy.get('#input-fabricacao-0').clear({ force: true }).type('2021');
-    cy.get('#input-modelo-0').clear({ force: true }).type('2022');
-    cy.get('#input-veiculo-0').clear({ force: true }).type('1803');
+  for (let i = 0; i < totalVeiculos; i++) {
+    const tipoVeiculo = (i < qtdCargaComum) ? 'carga-comum' :
+                        (i < qtdCargaComum + qtdTurismo) ? 'turismo' :
+                        (i < qtdCargaComum + qtdTurismo + qtdSemirreboque) ? 'semirreboque' :
+                        'carga-inflamavel'; 
+
+    cy.get(`#input-placa-${i}`).clear().type(gerarPlaca(), { timeout: 480000 });
     cy.realPress('Tab');
-    cy.contains('Concluir').click();
-  });
+    cy.get(`#input-chassi-${i}`, { timeout: 480000 }).clear().type(gerarChassi());
+    cy.realPress('Tab');
+
+    cy.get(`#input-fabricacao-${i}`, { timeout: 480000 }).invoke('val').then((fabricacao) => {
+      if (fabricacao) {
+        cy.get(`#input-placa-${i}`).clear().type(gerarPlaca(), { timeout: 480000 });
+        cy.get(`#input-chassi-${i}`, { timeout: 480000 }).clear().type(gerarChassi());
+        cy.realPress('Tab');
+      }
+
+      cy.get(`#input-fabricacao-${i}`).clear({ force: true }).type('2021');
+      cy.get(`#input-modelo-${i}`).clear({ force: true }).type('2022');
+
+      let valorInput;
+      if (tipoVeiculo === 'carga-comum') {
+        valorInput = '1803';
+      } else if (tipoVeiculo === 'turismo') {
+        valorInput = '1804';
+      } else if (tipoVeiculo === 'semirreboque') {
+        valorInput = '1805';
+      } else if (tipoVeiculo === 'carga-inflamavel') {
+        valorInput = '1803'; 
+      }
+
+      cy.get(`#input-veiculo-${i}`).clear({ force: true }).type(valorInput);
+      cy.realPress('Tab');
+    });
+  }
+  cy.contains('Concluir').click();
 });
+
+
 
 
 Cypress.Commands.add('dadosPropostaPF', () => {
   cy.get('#input-data-nascimento', { timeout: 480000 }).type('28072003',{ force: true })
   console.log('[Info] Data Nascimento Inserida');
-  cy.get('#input-profissao').type('caminhoneiro', { force: true })
+  cy.get('#input-profissao').type('analista', { force: true })
   console.log('[Info] Profissao Inserida');
   cy.get('#option-profissao-0', { timeout: 480000 }).click()
   cy.get('#select-faixa-renda').click({ force: true })
@@ -116,16 +166,16 @@ Cypress.Commands.add('InsereEndereco', () => {
 
 
 Cypress.Commands.add('InsereEmail', () => {
-  cy.get('#input-email-segurado').type('testes@teste.com.br');
+  cy.get('#input-email-segurado', { timeout: 480000 }).type('testes@teste.com.br');
   console.log('[Info] E-mail inserido');
 });
 
 Cypress.Commands.add('FormaPagamento', () => {
   cy.get('#select-forma-pagamento', { timeout: 480000 }).click({ force: true }, { timeout: 480000 });
-  cy.get('#option-forma-pagamento-0').click({ force: true })
+  cy.contains(formaPagamento).click({ force: true })
   console.log('[Info] Forma pagamento selecionada');
   cy.get('#select-valor-seguro').click({ force: true });
-  cy.get('#option-valor-seguro-4').click({ force: true })
+  cy.get(`#option-valor-seguro-${parcelas-1}`).click({ force: true })
   console.log('[Info] Valor Seguro selecionado');
 });
 
@@ -158,21 +208,7 @@ Cypress.Commands.add('AdicionaRenovacao', (renovacao) => {
   cy.get('#input-sucursal').type(renovacao.slice(0, 2));
   cy.get('#input-numero-apolice').type(renovacao.slice(2),{ force: true });
 });
-
-  Cypress.Commands.add('AcessaImportacao', () => {
-    cy.get('#span-numero-orcamento', { timeout: 480000 })
-    .invoke('text')
-    .then((numeroOrcamento) => {
-      Cypress.env('numeroDoc', numeroOrcamento);
-      cy.log('Número do orçamento:', numeroOrcamento);
-    });
   
-    cy.SelecionaPrimeiraOferta()
-    cy.contains('Incluir/Editar Itens').click()
-    console.log('[Info] Importacao acessada');
-  });
-  
-
   Cypress.Commands.add('SelecionaPrimeiraOferta', () => {
     cy.get(':nth-child(1) > app-resultado-card-oferta > .mat-mdc-card > .mat-mdc-card-content > .mt-4 > .d-block > .mdc-button__label', { timeout: 480000 }).click();
     console.log('[Info] Primeira Oferta Selecionada');

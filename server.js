@@ -1,19 +1,39 @@
 const express = require('express');
 const { spawn } = require('child_process');
-const fs = require('fs');
 
 const app = express();
 const PORT = 3001;
+app.use(express.json());
 
-app.get('/seguro-novo', (req, res) => {
-    const tipo = req.query.tipo; 
-    const qtdApolices = req.query.qtdApolices; 
-    const numeroApolice = req.query.numeroApolice; 
+app.post('/seguro-novo', (req, res) => {
+    const { apolice, veiculos, pagamento, endossos } = req.body;
 
-    console.log(`Recebido tipo: ${tipo}, quantidade de apólices: ${qtdApolices}${numeroApolice ? ` e número da apólice: ${numeroApolice}` : ''}`);
+    const { apoliceTipo, qtdApolices, apoliceStatus, renovacao } = apolice;
+    const { formaPagamento, parcelas } = pagamento;
+    const { inclusao, exclusao, cancelamento } = endossos;
 
-    const child = spawn('npx', ['cypress', 'run', '--spec', 'C:\\Users\\aliss\\Desktop\\PORTO\\Cypress\\Porto.Cy\\cypress\\e2e\\Funcionalidades\\SeguroNovo.cy.js', '--env', `tipo=${tipo},qtdApolices=${qtdApolices},numeroApolice=${numeroApolice}`], { shell: true });
+    const veiculosInfo = veiculos.map(veiculo => {
+        return Object.keys(veiculo).map(key => `(${key}= ${veiculo[key]})`).join(',');
+    });
 
+    console.log('=============================================================================================================================================');
+    console.log(`[APOLICE] (tipo: ${apoliceTipo}), (quantidade: ${qtdApolices}), (status: ${apoliceStatus}), (renovacao: ${renovacao})`);
+    console.log(`[PAGAMENTO] (forma: ${formaPagamento}), (parcelas: ${parcelas})`);
+    console.log(`[VEICULOS] ${veiculosInfo}`);
+    
+    const endossosLog = `[ENDOSSOS] ` +
+        (inclusao ? 'inclusão' : '') +
+        (exclusao ? (inclusao ? ', exclusão' : 'exclusão') : '') +
+        (cancelamento ? ((inclusao || exclusao) ? ', cancelamento' : 'cancelamento') : '') ||
+        'Nenhum endosso ativo';
+    
+    console.log(endossosLog);
+    console.log('=============================================================================================================================================');
+
+    // Monta o caminho do teste
+    const testPath = 'D:\\Desenvolvimento\\Clone\\Porto\\Cypress\\Carta-Azul\\CartaAzul-Cypress\\cypress\\e2e\\Funcionalidades\\SeguroNovo-Renovação.cy.js';
+
+    const child = spawn('npx', ['cypress', 'open', '--browser', 'edge'], { shell: true });
 
     child.stdout.on('data', (data) => {
         console.log(`stdout: ${data}`);
@@ -28,36 +48,7 @@ app.get('/seguro-novo', (req, res) => {
         return res.status(500).json({ error: 'Erro ao iniciar o Cypress' });
     });
 
-    child.on('close', (code) => {
-        console.log(`Cypress concluído com o código: ${code}`);
-
-        fs.access('cypress/documentosGerados.json', fs.constants.F_OK, (err) => {
-            if (err) {
-                console.error('Arquivo não encontrado:', err);
-                return res.status(404).json({ error: 'Arquivo de documentos gerados não encontrado' });
-            }
-
-            fs.readFile('cypress/documentosGerados.json', 'utf8', (err, data) => {
-                if (err) {
-                    console.error('Erro ao ler o arquivo:', err);
-                    return res.status(500).json({ error: 'Erro ao ler o arquivo de documentos gerados' });
-                }
-
-                const documentosGerados = JSON.parse(data);
-
-                fs.writeFile('cypress/documentosGerados.json', JSON.stringify([], null, 2), (err) => {
-                    if (err) {
-                        console.error('Erro ao limpar o arquivo:', err);
-                        return res.status(500).json({ error: 'Erro ao limpar o arquivo de documentos gerados' });
-                    }
-                });
-
-                res.json({
-                    documentosGerados: documentosGerados
-                });
-            });
-        });
-    });
+    res.json({ message: 'Cypress está sendo iniciado. Verifique a janela do Cypress para ver os testes.' });
 });
 
 app.listen(PORT, () => {
