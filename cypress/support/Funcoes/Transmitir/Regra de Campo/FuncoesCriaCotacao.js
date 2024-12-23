@@ -119,7 +119,7 @@ Cypress.Commands.add('FazImportacao', () => {
       } else if (tipoVeiculo === 'turismo') {
         valorInput = '1804';
       } else if (tipoVeiculo === 'semirreboque') {
-        valorInput = '1805';
+        valorInput = '15433';
       } else if (tipoVeiculo === 'carga-inflamavel') {
         valorInput = '1803'; 
       }
